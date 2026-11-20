@@ -1,0 +1,61 @@
+(() => {
+  const menu=document.getElementById('menu'), toc=document.getElementById('toc');
+  function setMenu(open, restore=false){
+    document.body.classList.toggle('menu-open',open);
+    menu.setAttribute('aria-expanded',String(open));
+    if(open)toc.querySelector('nav a')?.focus({preventScroll:true});
+    else if(restore)menu.focus({preventScroll:true});
+  }
+  menu.addEventListener('click',()=>setMenu(menu.getAttribute('aria-expanded')!=='true'));
+  toc.addEventListener('click',e=>{if(e.target.closest('a'))setMenu(false)});
+  document.addEventListener('click',e=>{if(!menu.contains(e.target)&&!toc.contains(e.target))setMenu(false)});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.body.classList.contains('menu-open'))setMenu(false,true)});
+  const links=[...toc.querySelectorAll('.toc-link')], targets=links.map(a=>document.getElementById(a.hash.slice(1)));
+  function current(){
+    const offset=window.innerWidth<=1100?80:48;
+    let n=-1;
+    for(let i=0;i<targets.length;i++){if(targets[i].getBoundingClientRect().top<=offset)n=i;else break}
+    links.forEach((a,i)=>{if(n===i)a.setAttribute('aria-current','location');else a.removeAttribute('aria-current')});
+  }
+  let tick=0;
+  window.addEventListener('scroll',()=>{if(!tick)tick=requestAnimationFrame(()=>{tick=0;current()})},{passive:true});current();
+  let active=[],hovered=null,focused=null,tapped=null;
+  const paired=e=>e instanceof Element?e.closest('[data-pair]'):null;
+  function select(e){
+    active.forEach(s=>s.classList.remove('is-paired'));active=[];
+    if(!e)return;
+    active=[...e.closest('.row').querySelectorAll('[data-pair]')].filter(s=>s.dataset.pair===e.dataset.pair);
+    active.forEach(s=>s.classList.add('is-paired'));
+  }
+  document.addEventListener('pointerover',e=>{if(e.pointerType!=='touch'){hovered=paired(e.target);select(hovered||focused||tapped)}});
+  document.addEventListener('pointerout',e=>{if(e.pointerType!=='touch'){hovered=paired(e.relatedTarget);select(hovered||focused||tapped)}});
+  document.addEventListener('focusin',e=>{focused=paired(e.target);select(focused||hovered||tapped)});
+  document.addEventListener('focusout',e=>{focused=paired(e.relatedTarget);select(focused||hovered||tapped)});
+  document.addEventListener('click',e=>{tapped=paired(e.target);select(tapped||focused||hovered)});
+  const diagram=document.querySelector('.diagram'), graphic=diagram.querySelector('svg');
+  function draw(){
+    const box=diagram.getBoundingClientRect();
+    const vertical=getComputedStyle(diagram.querySelector('.flow-stages')).flexDirection==='column';
+    graphic.setAttribute('viewBox','0 0 '+box.width+' '+box.height);
+    graphic.querySelectorAll('.edge').forEach(p=>p.remove());
+    for(const node of diagram.querySelectorAll('.flow-node')){
+      for(const key of node.dataset.from.split(' ').filter(Boolean)){
+        const a=document.getElementById('flow-'+key).getBoundingClientRect(), b=node.getBoundingClientRect();
+        const x1=(vertical?(a.left+a.right)/2:a.right)-box.left, x2=(vertical?(b.left+b.right)/2:b.left)-box.left;
+        const y1=(vertical?a.bottom:(a.top+a.bottom)/2)-box.top, y2=(vertical?b.top:(b.top+b.bottom)/2)-box.top;
+        const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+        path.setAttribute('class','edge');path.setAttribute('fill','none');path.setAttribute('stroke','#65816a');
+        path.setAttribute('stroke-width','1.6');path.setAttribute('marker-end','url(#arrowend)');
+        path.setAttribute('d',vertical?'M'+x1+' '+y1+'V'+((y1+y2)/2)+'H'+x2+'V'+(y2-2):'M'+x1+' '+y1+'H'+((x1+x2)/2)+'V'+y2+'H'+(x2-2));
+        graphic.append(path);
+      }
+    }
+  }
+  new ResizeObserver(draw).observe(diagram);document.fonts.ready.then(draw);draw();
+  const dialog=document.getElementById('zoom'),pan=dialog.querySelector('.zoom-pan'),full=pan.querySelector('img'),size=document.getElementById('size');let opener;
+  function native(on){pan.classList.toggle('native',on);size.textContent=on?'适应窗口':'原始尺寸';size.setAttribute('aria-pressed',String(on));pan.scrollTo(0,0)}
+  document.addEventListener('click',e=>{const b=e.target.closest('.open-image');if(!b)return;opener=b;const im=b.querySelector('img');full.src=im.src;full.alt=im.alt;document.getElementById('zoom-title').textContent=im.alt;native(false);dialog.showModal();document.getElementById('close').focus()});
+  size.onclick=()=>native(!pan.classList.contains('native'));full.onclick=size.onclick;
+  document.getElementById('close').onclick=()=>dialog.close();
+  dialog.addEventListener('close',()=>{full.removeAttribute('src');opener?.focus({preventScroll:true})});
+})();
