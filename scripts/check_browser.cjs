@@ -36,16 +36,29 @@ async function check(browser, file, width) {
         try {await image.decode();} catch {defects.push("图像解码 "+image.alt);}
       }
       const node = document.querySelector(".row");
+      const marks = elements(".row mark");
+      const tones = new Map(marks.map(mark => [mark.className, getComputedStyle(mark).backgroundColor]));
+      if ([...tones.values()].some(color => color === "rgba(0, 0, 0, 0)") ||
+          new Set(tones.values()).size !== tones.size) defects.push("原文着色缺失或类别颜色重复");
+      if (document.querySelector(".bibliography .row, .bibliography [data-pair]")) defects.push("书目混入三栏正文");
       const en=node.querySelector(".en").getBoundingClientRect(), zh=node.querySelector(".zh").getBoundingClientRect(), notes=node.querySelector(".notes").getBoundingClientRect();
       const horizontal=zh.left>=en.right-1 && notes.left>=zh.right-1;
       const stacked=zh.top>=en.bottom-1 && notes.top>=zh.bottom-1;
       const columns=horizontal?3:(stacked?1:0);
-      return {columns,
+      return {columns, highlights:marks.length, highlightColors:tones.size,
+              references:elements(".bibliography > li").length,
               graphConnections:elements(".diagram path.edge").length,
               eqLines:elements(".formula-line").length, images:elements(".open-image").length, defects};
     });
     errors.push(...summary.defects);
     if (summary.columns !== (mobile ? 1 : 3)) errors.push("列数异常");
+    const citation = page.locator(".row .cite").first();
+    if (await citation.count()) {
+      const href = await citation.getAttribute("href");
+      await citation.click();
+      if (await page.evaluate(() => location.hash) !== href || !await page.locator(href).isVisible())
+        errors.push("正文引文未定位到书目");
+    }
     const pair = page.locator(".row .en [data-pair]").first();
     const key = await pair.getAttribute("data-pair");
     const translation = page.locator('.zh [data-pair="'+key+'"]');

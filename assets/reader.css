@@ -14,3 +14,82 @@ figure{margin:13px 0 22px}.object,.equation-panel{border:1px solid var(--line);b
 
 .diagram{position:relative;container-type:inline-size;margin:14px 0 24px}.flow-stages{display:flex;gap:clamp(18px,2vw,40px);align-items:stretch}.stage{flex:1;min-width:0;list-style:none;margin:0;padding:0;display:flex;flex-direction:column;justify-content:center;gap:12px}.flow-node{position:relative;z-index:1;border-top:2px solid #76907d;padding:10px;background:#eff2e9;overflow-wrap:anywhere}.flow-node p{margin:.25em 0;font-size:.87rem}.connect{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}.sr-only{position:absolute;width:1px;height:1px;padding:0;clip-path:inset(50%);overflow:hidden;white-space:nowrap}
 @container(max-width:780px){.flow-stages{flex-direction:column;gap:23px}.stage{flex-direction:row}.flow-node{flex:1;min-width:0}}
+
+/* Paper and marginalia used in the weekly readers. */
+:root {
+  --paper: #fcfaf4; --ink: #242f31; --line: #d9d4c6; --rail: #f4f1e9;
+  --nav: #203637; --gutter: clamp(18px, 2.4vw, 48px);
+}
+body {line-height: 1.77}
+.layout {max-width: 1980px}
+.paper-view {min-width: 0}
+main {max-width: 1550px; margin: auto; padding: 0 var(--gutter) 36px}
+header {
+  background: var(--nav); color: #f7f4e9; padding: 0 var(--gutter) 22px;
+  border: 0; border-bottom: 4px solid #bca26f;
+}
+header a {color: #e9ddbc}
+.mast-line {display:flex; justify-content:space-between; padding:15px 0; border-bottom:1px solid #536462; font-size:.83rem}
+h1 {font:500 clamp(28px,3vw,55px)/1.14 var(--serif); letter-spacing:-.028em; margin:28px 0 14px; max-width:1120px}
+.title-zh {font:500 clamp(19px,1.55vw,29px)/1.45 var(--ui); margin-bottom:18px}
+header .authors, header .affiliations {color:#d6e1dc}
+header .affiliations {line-height:1.7; max-width:100ch}
+.pubdate {font-size:.85rem}
+.metrics {gap:12px 30px; margin:20px 0}
+.metrics > div {border-left:1px solid #72827a; padding-left:12px; max-width:33ch}
+.metrics dt {font-weight:400; font-size:.74rem; color:#c6d3c8}
+.metrics dd {font-weight:600}
+.legend {margin:0; padding:0; border:0; color:#e1e7e1}
+.source {margin:0; padding:22px 0 8px; border:0}
+.source details, .logic summary {font-size:.82rem}
+#framework {background:#f8f6ef; border:1px solid var(--line); border-radius:6px; padding:clamp(16px,1.6vw,28px); margin:12px 0}
+#framework h2 {font:550 .9rem var(--ui); margin:0 0 .5em}
+.route-question {font-size:clamp(18px,1.5vw,25px); font-weight:600; margin:.15em 0 1em}
+.route-question:empty {display:none}
+.flow-node {background:#f8faf4; border:1px solid #d2d9cb; border-left:3px solid #6a8872; border-radius:3px}
+.diagram {margin:12px 0 6px}
+.pair-hint,.loc {font-size:.78rem; color:#636f68}
+.column-head {background:transparent; border-bottom:1px solid var(--line); padding:9px 0}
+.row,.column-head {column-gap:clamp(16px,1.65vw,30px)}
+.row {padding:18px 0 24px; row-gap:9px}
+.sec-title {border-top:0; border-bottom:1px solid var(--line); padding:0 0 10px; margin:30px 0 0}
+.sec-title small,nav small {display:inline; font:inherit; color:inherit; margin-right:.4em}
+.sec-title span {font-size:.64em; color:#596a68; margin-top:.28em}
+.en {font:400 clamp(16px,1.24vw,19px)/1.68 var(--serif)}
+.zh {padding:10px 14px; border-color:#afa27c; color:#383d38; line-height:1.85}
+.notes {padding:14px 17px; border-left:3px solid var(--edge,#839789); border-radius:0 5px 5px 0; background:color-mix(in srgb,var(--tone,#d4e3d0) 30%, var(--paper)); font-size:.92rem}
+.annotation {background:transparent; border:0; padding:0; margin:0}
+.annotation + .annotation {margin-top:.8em}
+.annotation strong {font-weight:650}
+.evidence a {display:inline-block; margin:5px 6px 0 0; font-size:.8rem}
+.logic {border-top:1px solid var(--line); padding-top:6px; margin-top:.6em}
+.logic p,.logic b {font-size:.83rem; margin:.2em 0}
+.claim,.tone-claim {--tone:#f2df9e; --edge:#9a7824}
+.result,.tone-result {--tone:#c7e1bf; --edge:#618956}
+.method,.tone-method {--tone:#ddd3ed; --edge:#826a99}
+.concept,.tone-concept {--tone:#c8dfea; --edge:#547f94}
+.limit,.tone-limit {--tone:#f0ccc9; --edge:#ae6663}
+.note-kind {display:block; font:600 .74rem/1.5 var(--ui); color:#48665b; margin-bottom:.2rem}
+mark, .legend i {background:var(--tone); box-decoration-break:clone; -webkit-box-decoration-break:clone}
+mark {padding:0 .035em}
+.is-paired {background:rgba(86,113,131,.075); outline:1px solid #72909c}
+.is-paired mark {background:var(--tone); box-shadow:none}
+.cite {font-size:.89em}
+.bibliography {list-style:none; padding:0; margin:0; max-width:105ch}
+.bibliography li {display:grid; grid-template-columns:3em minmax(0,1fr); gap:.4em; padding:.65em 0; border-bottom:1px solid var(--line); overflow-wrap:anywhere; font:1rem/1.55 var(--serif)}
+.bib-label,.bibliography a {font:500 .82rem/1.7 var(--ui); color:#54645e}
+.bibliography li:target {background:#f4eac8}
+#originals summary {padding:7px 0}
+#study article, .syn, .compare > div {border-left:3px solid #a69a77; background:#f3f0e7; padding:12px 18px; margin:12px 0}
+#study h3, .syn h3, .compare h3 {margin:0 0 6px}
+#study p, .syn p, .compare p {margin:0}
+#argument {max-width:none}
+.compare {display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px}
+.compare > div:first-child {border-color:#73896c; background:#eff3ea}
+.compare > div:last-child {border-color:#a78069; background:#f5eee6}
+@media(max-width:780px) {
+  .metrics > div {max-width:25ch}
+  header {padding-bottom:16px}
+  .notes {padding:11px 14px}
+  .compare {display:block}
+}

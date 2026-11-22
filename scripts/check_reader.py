@@ -21,6 +21,8 @@ class Audit(HTMLParser):
         self.labels = {}
         self.obj = None
         self.ledger = {}
+        self.highlights = Counter()
+        self.equations = []
 
     def handle_starttag(self, tag, attrs):
         at = dict(attrs)
@@ -32,6 +34,10 @@ class Audit(HTMLParser):
             self.ids.add(ident)
         if tag == "a":
             self.hrefs.append(at.get("href", ""))
+        if tag == "li" and ident.startswith("ref-"):
+            self.counts["bibliography_entries"] += 1
+        if tag == "mark":
+            self.highlights.update(classes)
         if tag in (
             "img",
             "script",
@@ -72,6 +78,7 @@ class Audit(HTMLParser):
             self.counts["equation_lines"] += 1
         if "equation-panel" in classes:
             self.counts["verified_equations"] += 1
+            self.equations.append(ident)
         if tag == "table":
             self.counts["native_tables"] += 1
         if tag == "math":
@@ -104,10 +111,17 @@ class Audit(HTMLParser):
 def main():
     a = argparse.ArgumentParser(description=__doc__)
     a.add_argument("reader", type=Path)
+    a.add_argument("--equation-order", type=Path, help="按原稿阅读顺序独立记录的已核公式对象 ID 数组（不含 obj- 前缀）")
     args = a.parse_args()
     audit = Audit()
     audit.feed(args.reader.read_text("utf8"))
     audit.close()
+    if args.equation_order:
+        expected = json.loads(args.equation_order.read_text("utf-8-sig"))
+        if not isinstance(expected, list) or not all(isinstance(v, str) for v in expected):
+            a.error("公式清单应为对象 ID 字符串数组")
+        if audit.equations != ["obj-" + v for v in expected]:
+            audit.err.append("已核公式的编号或阅读次序与原稿清单不符，页面实际顺序：" + ", ".join(audit.equations))
     for href in audit.hrefs:
         u = urlsplit(href)
         if href.startswith("#") and unquote(u.fragment) not in audit.ids:
@@ -133,6 +147,7 @@ def main():
             {
                 "structure": dict(audit.counts),
                 "sentence_groups": len(audit.pairs),
+                "original_highlights": dict(audit.highlights),
                 "objects": audit.ledger,
                 "errors": audit.err,
             },

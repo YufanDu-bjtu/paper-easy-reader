@@ -24,7 +24,7 @@ def inspect_pdf(path):
         pages = []
         for pg in doc:
             blocks = [
-                {"bbox": list(b[:4]), "text": b[4]}
+                {"source_block": b[5], "bbox": list(b[:4]), "text": b[4]}
                 for b in pg.get_text("blocks", flags=lib.TEXTFLAGS_TEXT, sort=True)
                 if b[4].strip()
             ]
@@ -37,6 +37,8 @@ def inspect_pdf(path):
                     "page": pg.number + 1,
                     "size": list(pg.rect),
                     "rotation": pg.rotation,
+                    "source_order": sorted(b["source_block"] for b in blocks),
+                    "order_note": "blocks 为坐标候选序；source_order 为 PDF 存储序。请对照原页和论述另定阅读次序。",
                     "blocks": blocks,
                     "image_candidates": images,
                     "text_extracted": bool(blocks),

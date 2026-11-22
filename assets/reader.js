@@ -1,4 +1,16 @@
 (() => {
+  function revealSource(hash) {
+    if (!/^#(?:page-|ref-)/.test(hash)) return;
+    const target = document.getElementById(hash.slice(1));
+    const details = target?.closest('details');
+    if (details) details.open = true;
+  }
+  revealSource(location.hash);
+  window.addEventListener('hashchange', () => revealSource(location.hash));
+  document.addEventListener('click', event => {
+    const link = event.target.closest('a[href^="#page-"], a[href^="#ref-"]');
+    if (link) revealSource(link.hash);
+  });
   const menu=document.getElementById('menu'), toc=document.getElementById('toc');
   function setMenu(open, restore=false){
     document.body.classList.toggle('menu-open',open);

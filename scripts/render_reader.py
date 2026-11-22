@@ -26,12 +26,23 @@ rowlines frame framespacing equalrows equalcolumns columnwidth width height dept
 notation subscriptshift superscriptshift lquote rquote encoding side align mathcolor""".split()
 )
 CATEGORIES = {
-    "thesis": "核心论点",
-    "term": "概念术语",
-    "data": "实证证据",
-    "caveat": "让步与局限",
-    "method": "方法说明",
+    "claim": "关键论点／观点",
+    "result": "关键结论",
+    "method": "采用的方法",
+    "concept": "重要概念",
+    "limit": "不足与待改进",
 }
+# Data and caveats in older manifests require editorial review before recoloring.
+LEGACY_ROLES = {"thesis": "claim", "term": "concept", "data": None, "caveat": None}
+
+
+def highlight_role(value):
+    role = LEGACY_ROLES.get(value, value)
+    if role and role not in CATEGORIES:
+        raise ValueError(f"未知高亮类型 {role}")
+    return role
+
+
 METRICS = ("中科院分区", "新锐分区", "影响因子", "年发文量")
 KINDS = {"figure": "图", "table": "表", "equation": "式"}
 STATUS = {"verified": "已核对", "pending": "待核验"}
@@ -93,6 +104,9 @@ def rich(value, highlight=False):
     for token in value:
         if isinstance(token, str):
             output.append(esc(token))
+        elif "sup" in token or "sub" in token:
+            tag = "sup" if "sup" in token else "sub"
+            output.append(f"<{tag}>{esc(need(token, tag))}</{tag}>")
         elif "ref" in token:
             anchor = "obj-" + safe_id(token["ref"])
             output.append(f'<a href="#{anchor}">{esc(need(token, "text"))}</a>')
@@ -100,11 +114,9 @@ def rich(value, highlight=False):
             output.append(mathml(token["mathml"], "inline"))
         else:
             phrase = esc(need(token, "text"))
-            role = token.get("role")
-            if role and role not in CATEGORIES:
-                raise ValueError(f"未知高亮类型 {role}")
+            role = highlight_role(token.get("role"))
             output.append(
-                f'<mark class="{role}">{phrase}</mark>'
+                f'<mark class="{role}" title="{CATEGORIES[role]}">{phrase}</mark>'
                 if role and highlight
                 else phrase
             )
@@ -149,7 +161,21 @@ def picture(base, item, fallback):
     return f'<button type="button" class="open-image" aria-label="放大{esc(fallback)}"><img loading="lazy" decoding="async" src="data:image/{kind};base64,{data}" alt="{esc(item.get("alt") or fallback)}"></button>'
 
 
-def table_html(rows):
+def link_citations(text, numbers):
+    if not numbers:
+        return text
+
+    def group(match):
+        def number(n):
+            if n[0] in numbers:
+                return f'<a class="cite" href="#ref-{n[0]}">{n[0]}</a>'
+            return n[0]
+        return re.sub(r"\d+", number, match[0])
+
+    return re.sub(r"\[\d+(?:\s*[,，–−-]\s*\d+)*\]", group, text)
+
+
+def table_html(rows, cite_numbers):
     cells = []
     for row in rows:
         if not row:
@@ -165,7 +191,7 @@ def table_html(rows):
                     if val < 1:
                         raise ValueError(key)
                     attrs += f' {key}="{val}"'
-            line.append(f"<{tag}{attrs}>{rich(c['text'])}</{tag}>")
+            line.append(f"<{tag}{attrs}>{link_citations(rich(c['text']), cite_numbers)}</{tag}>")
         cells.append("<tr>" + "".join(line) + "</tr>")
     return (
         '<div tabindex="0" class="table-scroll"><table>'
@@ -174,7 +200,7 @@ def table_html(rows):
     )
 
 
-def render_object(o, base, source_url):
+def render_object(o, base, source_url, cite_numbers):
     kind, status = o["kind"], o["status"]
     if kind not in KINDS or status not in STATUS:
         raise ValueError(f"原件类型或核验状态无效 {o.get('id')}")
@@ -190,7 +216,7 @@ def render_object(o, base, source_url):
         content.append('<p class="pending">' + esc(need(o, "reason")) + "</p>")
         if kind in ("figure", "table"):
             if o.get("table"):
-                content.append(table_html(o["table"]))
+                content.append(table_html(o["table"], cite_numbers))
             content.extend(picture(base, img, label) for img in o.get("images", []))
     elif kind == "equation":
         lines = o.get("lines") or [need(o, "mathml")]
@@ -207,7 +233,7 @@ def render_object(o, base, source_url):
         )
     else:
         if o.get("table"):
-            content.append(table_html(o["table"]))
+            content.append(table_html(o["table"], cite_numbers))
         content.extend(picture(base, img, label) for img in o.get("images", []))
         if not content:
             raise ValueError(f"{label} 已标为核对，却无图像或表格内容")
@@ -218,7 +244,7 @@ def render_object(o, base, source_url):
     return f'<figure id="{ident}" class="{cls}">{head}{"".join(content)}</figure>'
 
 
-def paragraph(p, index, original="en"):
+def paragraph(p, index, original="en", cite_numbers=(), page_numbers=(), render_equation=None):
     en_label, zh_label = (
         ("英文译文", "中文原文") if original == "zh" else ("英文原文", "中文意译")
     )
@@ -229,23 +255,40 @@ def paragraph(p, index, original="en"):
     for i, pair in enumerate(sentences, 1):
         for field, target in (("en", en), ("zh", zh)):
             s = rich(pair[field], field == original)
+            s = link_citations(s, cite_numbers)
             if not s.strip():
                 raise ValueError(f"空句对 {index}.{i}")
             target.append(f'<span tabindex="0" data-pair="{index}-{i}">{s}</span>')
+        equation_keys = pair.get("equations_after", [])
+        if not isinstance(equation_keys, list) or not all(isinstance(key, str) for key in equation_keys):
+            raise ValueError("equations_after 应为公式对象 ID 数组")
+        for key in equation_keys:
+            if render_equation is None:
+                raise ValueError("段内公式缺少对象清单")
+            (en if original == "en" else zh).append(render_equation(key))
     annotations = []
     for n in p["notes"]:
+        byline = ""
+        if n.get("kind"):
+            byline = f'<span class="note-kind">{esc(need(n, "kind"))}</span>'
         annotations.append(
-            f'<div class="annotation"><strong>{esc(need(n, "label"))}</strong><p>{rich(n["text"])}</p></div>'
+            f'<div class="annotation">{byline}<strong>{esc(need(n, "label"))}</strong><p>{rich(n["text"])}</p></div>'
         )
+    role = highlight_role(p.get("role"))
+    reading = ""
+    if p.get("logic"):
+        reading = f'<details class="logic"><summary>段落功能与论证位置</summary><b>{CATEGORIES.get(role,"")}</b><p>{rich(p["logic"])}</p></details>'
+    pages = "".join(f'<a href="#page-{i}">原稿第 {i} 页</a> ' for i in p.get("pages", []) if i in page_numbers)
+    evidence = "".join(f'<a href="#obj-{safe_id(r["id"])}">{esc(need(r,"label"))}</a> ' for r in p.get("evidence", []))
     return (
-        f'<article class="row" id="para-{index}"><div class="loc">{esc(need(p, "loc"))}</div>'
+        f'<article class="row" id="para-{index}"><div class="loc">{pages or esc(need(p, "loc"))}</div>'
         f'<div class="en" lang="en"><span class="mobile-label">{en_label}</span>{" ".join(en)}</div>'
         f'<div class="zh"><span class="mobile-label">{zh_label}</span>{"".join(zh)}</div>'
-        f'<aside class="notes">{"".join(annotations)}</aside></article>'
+        f'<aside class="notes tone-{role or "neutral"}">{"".join(annotations)}<div class="evidence">{evidence}</div>{reading}</aside></article>'
     )
 
 
-def header(m):
+def header(m, legend, doi_url, nav):
     authors, affiliations = m["authors"], m["affiliations"]
     if not authors:
         raise ValueError("请填写作者或原文署名状态")
@@ -274,15 +317,18 @@ def header(m):
         elif item.get("value") and item["value"] not in ("待核验", "不适用"):
             raise ValueError(f"{key} 需注明版次、统计口径和依据")
         metric_html.append(f"<div><dt>{key}</dt><dd>{value}</dd></div>")
+    doi_link = link(doi_url, "DOI ↗") if doi_url else ""
     return (
-        f'<header><p class="journal">{esc(need(m, "journal"))}　{esc(need(m, "date"))}</p>'
+        f'<header><div class="mast-line"><span>{nav or "论文精读"}</span><a href="#framework">技术路线图 ↓</a></div>'
         f'<h1 lang="en">{esc(need(m, "title_en"))}</h1><p class="title-zh">{esc(need(m, "title_zh"))}</p>'
         f'<p class="authors">{" · ".join(names)}</p><p class="affiliations">{institution}</p>'
-        f'<dl class="metrics">{"".join(metric_html)}</dl></header>'
+        f'<p class="pubdate">{esc(need(m, "date"))}　{doi_link}</p>'
+        f'<dl class="metrics"><div><dt>期刊</dt><dd>{esc(need(m,"journal"))}</dd></div>{"".join(metric_html)}</dl>'
+        f'<div class="legend">{legend}</div></header>'
     )
 
 
-def framework_html(steps):
+def framework_html(steps, question=""):
     stages = []
     levels = {}
     lookup = {}
@@ -312,7 +358,21 @@ def framework_html(steps):
     columns = "".join(
         '<ul class="stage">' + "".join(nodes) + "</ul>" for nodes in stages
     )
-    return f'<section id="framework"><h2>技术路线</h2><div class="diagram"><svg aria-hidden="true" class="connect"><defs><marker id="arrowend" markerWidth="5" markerHeight="5" refX="4.6" refY="2.5" orient="auto"><path d="M0 0L5 2.5L0 5Z" fill="#65816a"></path></marker></defs></svg><div class="flow-stages">{columns}</div></div></section>'
+    return f'<section id="framework"><h2>技术路线图</h2><p class="route-question">{esc(question)}</p><div class="diagram"><svg aria-hidden="true" class="connect"><defs><marker id="arrowend" markerWidth="5" markerHeight="5" refX="4.6" refY="2.5" orient="auto"><path d="M0 0L5 2.5L0 5Z" fill="#65816a"></path></marker></defs></svg><div class="flow-stages">{columns}</div></div></section>'
+
+
+def bibliography_entries(section, original):
+    if "entries" in section:
+        return section["entries"]
+    # Older manifests grouped bibliography entries as aligned sentence pairs.
+    entries = []
+    for block in section.get("blocks", []):
+        for pair in block.get("pairs", []):
+            citation = pair[original]
+            match = re.match(r"^\s*\[?(\d+)(?:\]|\.)\s+(.*)", citation) if isinstance(citation, str) else None
+            entries.append({"label": match[1] if match else str(len(entries) + 1),
+                            "citation": match[2] if match else citation})
+    return entries
 
 
 def render(data, base):
@@ -354,7 +414,7 @@ def render(data, base):
         raise ValueError("请注明正式 PDF 的状态")
     if source.get("formal_pdf") == "preprint":
         status = "<strong>预印本</strong> · "
-    version_box = f'<section class="source"><h2>阅读版本与来源</h2><p>{status}{version}</p><p>{scope}</p><p>{"　".join(sources)}</p></section>'
+    version_box = f'<section class="source"><p>{status}{scope}</p><details><summary>阅读版本、原件与许可</summary><p>{version}</p><p>{"　".join(sources)}</p></details></section>'
     objects = {}
     for item in data["objects"]:
         key = safe_id(item["id"])
@@ -364,14 +424,25 @@ def render(data, base):
     flow = data["framework"]
     if not flow:
         raise ValueError("缺少论文技术路线")
-    framework = framework_html(flow)
-    toc = ['<a href="#framework">技术路线</a>']
+    framework = framework_html(flow, data.get("question", ""))
+    toc = ['<a href="#framework">技术路线图<span>Research framework</span></a>']
+    bib = {s["id"]: bibliography_entries(s, original) for s in data["sections"]
+           if s.get("kind") == "bibliography" or s["en"].strip().casefold() in ("references", "bibliography") or s["zh"].strip()=="参考文献"}
+    cite_numbers = {str(e["label"]) for entries in bib.values() for e in entries}
+    pages = data.get("pages", [])
+    page_numbers = {int(p["number"]) for p in pages}
     sections = []
     used = set()
     ids = set()
     index = 0
     if not data["sections"]:
         raise ValueError("缺少论文章节")
+    def place_equation(key):
+        if key not in objects or objects[key]["kind"] != "equation" or key in used:
+            raise ValueError(f"段内公式未登记、类型错误或重复放置 {key}")
+        used.add(key)
+        return render_object(objects[key], base, source_url or doi_url, cite_numbers)
+
     for sec in data["sections"]:
         key = safe_id(sec["id"])
         if key in ids:
@@ -396,16 +467,26 @@ def render(data, base):
         blocks = [
             f'<{tag} class="sec-title">{number}{zh}<span lang="en">{en}</span></{tag}>'
         ]
+        if key in bib:
+            items = []
+            for entry in bib[key]:
+                label = str(entry["label"])
+                anchor = safe_id("ref-" + label)
+                doi = link("https://doi.org/" + entry["doi"], "DOI ↗") if entry.get("doi") else ""
+                items.append(f'<li id="{anchor}"><span class="bib-label">[{esc(label)}]</span><span>{rich(entry["citation"])} {doi}</span></li>')
+            blocks.append(f'<details class="bib-list"><summary>查看 {len(items)} 条参考文献</summary><ol class="bibliography">' + "".join(items) + '</ol></details>')
+            sections.append(f'<section class="bibliography-section" id="sec-{key}">{"".join(blocks)}</section>')
+            continue
         for p in sec["blocks"]:
             if "object" in p:
                 obj = p["object"]
                 if obj in used or obj not in objects:
                     raise ValueError(f"原件位置重复或未登记 {obj}")
                 used.add(obj)
-                blocks.append(render_object(objects[obj], base, source_url or doi_url))
+                blocks.append(render_object(objects[obj], base, source_url or doi_url, cite_numbers))
             else:
                 index += 1
-                blocks.append(paragraph(p, index, original))
+                blocks.append(paragraph(p, index, original, cite_numbers, page_numbers, place_equation))
         sections.append(
             f'<section class="paper-section" id="sec-{key}">{"".join(blocks)}</section>'
         )
@@ -420,9 +501,21 @@ def render(data, base):
             f'<a href="#obj-{key}">{esc(o["label"])}{" · 待核" if o["status"] == "pending" else ""}</a>'
             for key, o in objects.items()
         )
-        toc.append(
-            f'<details><summary>图表与公式索引</summary><div class="object-links">{items}</div></details>'
-        )
+        toc.insert(0, f'<details><summary>图表与公式索引</summary><div class="object-links">{items}</div></details>')
+    originals = ""
+    if pages:
+        originals = '<section id="originals"><h2>原页索引</h2>'
+        for p in pages:
+            num = int(p["number"])
+            originals += f'<details id="page-{num}"><summary>第 {num} 页 · 原稿</summary>{picture(base,p,"PDF 第 "+str(num)+" 页")}</details>'
+        originals += '</section>'
+        toc.append('<a href="#originals">原页索引<span>Original pages</span></a>')
+    study = ""
+    if data.get("study"):
+        toc.append('<a href="#study">精读与证据核验<span>Critical reading</span></a>')
+        study = '<section id="study"><h2>精读与证据核验</h2>' + "".join(
+            f'<article><h3>{esc(need(item,"title"))}</h3><p>{rich(item["text"])}</p></article>'
+            for item in data["study"]) + '</section>'
     conclusion = data["argument"]
     lineage = ""
     if data.get("prior"):
@@ -448,10 +541,11 @@ def render(data, base):
     chain = "".join(f"<li>{rich(x)}</li>" for x in conclusion["chain"])
     if not chain:
         raise ValueError("缺少论证链")
-    argument = f'<section id="argument"><h2>{argument_heading}</h2><ol>{chain}</ol><h3>{claim_heading}</h3><p>{claim}</p><h3>论证最强处</h3><p>{rich(conclusion["strong"])}</p><h3>论证最弱处</h3><p>{rich(conclusion["weak"])}</p></section>'
-    legend = "".join(
-        f'<span><i class="{c}"></i>{v}</span>' for c, v in CATEGORIES.items()
-    )
+    argument = f'<section id="argument"><h2>{argument_heading}</h2><ol>{chain}</ol><div class="syn"><h3>{claim_heading}</h3><p>{claim}</p></div><div class="compare"><div><h3>论证最强处</h3><p>{rich(conclusion["strong"])}</p></div><div><h3>论证最弱处</h3><p>{rich(conclusion["weak"])}</p></div></div></section>'
+    roles = {highlight_role(token.get("role")) for sec in data["sections"] if sec["id"] not in bib
+             for block in sec.get("blocks", []) for pair in block.get("pairs", [])
+             if isinstance(pair[original], list) for token in pair[original] if isinstance(token, dict)}
+    legend = "".join(f'<span><i class="{c}"></i>{v}</span>' for c,v in CATEGORIES.items() if c in roles)
     style = font_css() + (ASSETS / "reader.css").read_text("utf8")
     script = (
         (ASSETS / "reader.js").read_text("utf8")
@@ -465,7 +559,7 @@ def render(data, base):
     )
     return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(data["meta"]["title_zh"])}</title><style>{style}</style></head><body>
 <div class="mobile-bar"><button id="menu" aria-expanded="false" aria-controls="toc">章节目录</button>{nav}</div><div class="layout"><aside id="toc"><div class="toc-nav">{nav}</div><h2>论文章节目录</h2><nav>{"".join(toc)}</nav></aside>
-<main>{header(data["meta"])}{version_box}<div class="legend">{legend}</div>{framework}<div class="column-head"><span>{en_label}</span><span>{zh_label}</span><span>精读批注</span></div>{"".join(sections)}{lineage}{argument}<footer>{nav}　<a href="#top" id="back-top">返回页首</a></footer></main></div>
+<div class="paper-view">{header(data["meta"],legend,doi_url,nav)}<main>{version_box}{framework}<p class="pair-hint">悬停或点选中英文句子可查看对应译文；键盘可用 Tab 聚焦。</p><div class="column-head"><span>{en_label}</span><span>{zh_label}</span><span>概念与研读笔记</span></div>{"".join(sections)}{originals}{study}{lineage}{argument}<footer>{nav}　<a href="#top" id="back-top">返回页首</a></footer></main></div></div>
 <dialog id="zoom" aria-labelledby="zoom-title"><div class="dialog-bar"><b id="zoom-title">原图</b><button id="size">原始尺寸</button><button id="close">关闭</button></div><div class="zoom-pan" tabindex="0"><img alt=""></div></dialog><script>{script}</script></body></html>""".replace(
         "<body>", '<body id="top">', 1
     )

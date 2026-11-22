@@ -24,11 +24,17 @@
     "blocks": [{
       "loc": "示例第 1 节，第 1 段",
       "pairs": [
-        {"en": "A cylinder collected 30 mL of water in 10 s.", "zh": "量筒在 10 秒内共收集到 30 毫升水。"},
-        {"en": "The mean flow rate over this interval was 3 mL/s.", "zh": "这段时间内的平均流量为 3 毫升/秒。"}
+        {"en": [{"text":"A single collection can estimate the interval mean","role":"claim"}, "."], "zh": "一次集水测量即可估算该时段的平均流量。"},
+        {"en": ["We ", {"text":"collected water in a graduated cylinder for 10 s","role":"method"}, " and measured 30 mL."], "zh": "我们用量筒集水 10 秒，读数为 30 毫升。"},
+        {"en": ["The ", {"text":"time-averaged flow rate","role":"concept"}, " equals the volume divided by the collection time."], "zh": "时间平均流量等于收集体积除以收集时长。", "equations_after":["eq1"]},
+        {"en": ["Here, ", {"text":"the mean flow rate was 3 mL/s","role":"result"}, "."], "zh": "本次测量得到的平均流量为 3 毫升/秒。"},
+        {"en": [{"text":"A single volume reading cannot resolve fluctuations within the interval","role":"limit"}, "."], "zh": "一次累计体积读数无法分辨时段内的流量波动。"}
       ],
-      "notes": [{"label": "平均值能说明什么", "text": "式（1）把两项观测量换算为区间平均值。判断流量是否随时间变化，还需要分时段测量。"}]
-    }, {"object": "eq1"}]
+      "notes": [
+        {"kind":"作者结论","label":"这次测到了什么？","text":["用 30 mL 除以 10 s，可按",{"ref":"eq1","text":"式（1）"},"复算这段时间的平均流量。"]},
+        {"kind":"编者 · 概念解释","label":"平均流量相同，过程也相同吗？","text":"设前 5 秒无水流出，后 5 秒以 6 mL/s 流出，总量仍是 30 mL。把前后两个时段分别集水，就能区分这一过程与持续的 3 mL/s 出流。"}
+      ]
+    }]
   }],
   "objects": [{
     "id": "eq1", "kind": "equation", "label": "式（1）", "loc": "示例第 1 节",
