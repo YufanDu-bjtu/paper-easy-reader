@@ -71,3 +71,112 @@
   document.getElementById('close').onclick=()=>dialog.close();
   dialog.addEventListener('close',()=>{full.removeAttribute('src');opener?.focus({preventScroll:true})});
 })();
+
+// Use the rendered text, notes and equations of this paper to size its reading columns.
+(() => {
+  const head = document.querySelector('.column-head');
+  const rows = [...document.querySelectorAll('article.row')];
+  if (!head || !rows.length) return;
+  const columns = ['.en', '.zh', '.notes'].map(selector =>
+    rows.map(row => row.querySelector(':scope > ' + selector)).filter(Boolean));
+  if (columns.some(cells => cells.length !== rows.length)) return;
+  const main = head.closest('main');
+  const sum = values => values.reduce((a, b) => a + b, 0);
+  const clamp = (x, low, high) => Math.max(low, Math.min(x, high));
+
+  // Allocate available width proportionally, reserving a readable measure for short columns.
+  function allocate(weights, floors, width) {
+    const result = floors.slice();
+    let free = [0, 1, 2];
+    let space = width;
+    while (free.length) {
+      const total = sum(free.map(i => weights[i]));
+      const below = free.filter(i => space * weights[i] / total < floors[i]);
+      if (!below.length) {
+        for (const i of free) result[i] = space * weights[i] / total;
+        break;
+      }
+      space -= sum(below.map(i => floors[i]));
+      free = free.filter(i => !below.includes(i));
+    }
+    return result;
+  }
+
+  function setTracks(widths) {
+    main.style.setProperty('--cols', widths.map(w => 'minmax(0,' + w.toFixed(2) + 'fr)').join(' '));
+  }
+
+  // A display equation following the last sentence belongs to both languages.
+  // Share that line on desktop; keep it with its source sentence in the mobile reading order.
+  const trailing = [];
+  for (const row of rows) {
+    for (const cell of [row.querySelector('.en'), row.querySelector('.zh')]) {
+      const group = [];
+      let last = cell.lastElementChild;
+      while (last?.matches('figure.equation-panel')) {
+        group.unshift(last);
+        last = last.previousElementSibling;
+      }
+      if (group.length) trailing.push({row, cell, group});
+    }
+  }
+  function positionEquations(shared) {
+    let changed = false;
+    for (const {row, cell, group} of trailing) {
+      const target = shared ? row : cell;
+      if (group[0].parentNode !== target) {
+        target.append(...group);
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  let lastWidth = 0;
+  function balance() {
+    if (getComputedStyle(head).display === 'none') {
+      const moved = positionEquations(false);
+      lastWidth = 0;
+      main.style.removeProperty('--cols');
+      if (moved) document.dispatchEvent(new Event('readercolumnchange'));
+      return;
+    }
+    const box = head.getBoundingClientRect().width;
+    if (!box || Math.abs(box - lastWidth) < 1) return;
+    lastWidth = box;
+    positionEquations(true);
+    const available = box - 2 * parseFloat(getComputedStyle(head).columnGap);
+    const font = parseFloat(getComputedStyle(main).fontSize);
+    const floor = [12, 12, 10].map(ems => Math.min(ems * font, 0.25 * available));
+    let widths = [...head.children].map(cell => cell.getBoundingClientRect().width);
+    let bestWidths = widths.slice();
+    let bestSpread = Infinity;
+    for (let pass = 0; pass < 7; pass++) {
+      const heights = columns.map(cells => sum(cells.map(cell => cell.getBoundingClientRect().height)));
+      if (Math.min(...heights) <= 0) break;
+      // A column at its readable minimum cannot donate further width.
+      const donors = heights.filter((_, i) => widths[i] > floor[i] + 1);
+      const spread = Math.max(...heights) / Math.min(...donors) - 1;
+      if (spread < bestSpread) {
+        bestSpread = spread;
+        bestWidths = widths.slice();
+      }
+      if (spread < 0.018 || pass === 6) break;
+      const proposed = allocate(widths.map((w, i) => w * heights[i]), floor, available);
+      if (proposed.every((w, i) => Math.abs(w - widths[i]) < 0.8)) break;
+      widths = proposed;
+      setTracks(widths);
+    }
+    setTracks(bestWidths);
+    document.dispatchEvent(new Event('readercolumnchange'));
+  }
+
+  let timer;
+  function schedule() {
+    clearTimeout(timer);
+    timer = setTimeout(balance, 90);
+  }
+  document.fonts.ready.then(balance);
+  document.fonts.addEventListener('loadingdone', () => { lastWidth = 0; schedule(); });
+  new ResizeObserver(schedule).observe(head);
+})();

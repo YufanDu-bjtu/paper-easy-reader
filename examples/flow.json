@@ -23,9 +23,10 @@
     "id": "measurement", "level": 1, "number": "1", "en": "Measurement", "zh": "测量",
     "blocks": [{
       "loc": "示例第 1 节，第 1 段",
+      "summary": "10 秒收集 30 毫升水，对应平均流量 3 毫升/秒。总量与时长无法确定流量在这段时间内怎样波动。",
       "pairs": [
         {"en": [{"text":"A single collection can estimate the interval mean","role":"claim"}, "."], "zh": "一次集水测量即可估算该时段的平均流量。"},
-        {"en": ["We ", {"text":"collected water in a graduated cylinder for 10 s","role":"method"}, " and measured 30 mL."], "zh": "我们用量筒集水 10 秒，读数为 30 毫升。"},
+        {"en": ["We ", {"text":"collected water in a graduated cylinder for 10 s","role":"method"}, " and ", {"text":"measured 30 mL","role":"data"}, "."], "zh": "我们用量筒集水 10 秒，读数为 30 毫升。"},
         {"en": ["The ", {"text":"time-averaged flow rate","role":"concept"}, " equals the volume divided by the collection time."], "zh": "时间平均流量等于收集体积除以收集时长。", "equations_after":["eq1"]},
         {"en": ["Here, ", {"text":"the mean flow rate was 3 mL/s","role":"result"}, "."], "zh": "本次测量得到的平均流量为 3 毫升/秒。"},
         {"en": [{"text":"A single volume reading cannot resolve fluctuations within the interval","role":"limit"}, "."], "zh": "一次累计体积读数无法分辨时段内的流量波动。"}

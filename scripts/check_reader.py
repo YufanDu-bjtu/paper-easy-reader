@@ -23,6 +23,10 @@ class Audit(HTMLParser):
         self.ledger = {}
         self.highlights = Counter()
         self.equations = []
+        self.active_row = False
+        self.briefs = 0
+        self.capture_brief = False
+        self.brief_text = []
 
     def handle_starttag(self, tag, attrs):
         at = dict(attrs)
@@ -72,6 +76,10 @@ class Audit(HTMLParser):
             self.labels["capture"] = self.obj
         if tag == "article" and "row" in classes:
             self.counts["paragraphs"] += 1
+            self.active_row = True
+        if tag=="p" and self.active_row and "brief" in classes:
+            self.capture_brief=True
+            self.brief_text=[]
         if tag == "section" and "paper-section" in classes:
             self.counts["sections"] += 1
         if "formula-line" in classes:
@@ -96,6 +104,10 @@ class Audit(HTMLParser):
             self.pairs.setdefault(at["data-pair"], Counter())[lang] += 1
 
     def handle_endtag(self, tag):
+        if tag=="p" and self.capture_brief:
+            self.capture_brief=False
+            if "".join(self.brief_text).strip():self.briefs+=1
+        if tag=="article":self.active_row=False
         if tag == "div" and self.trail:
             self.trail.pop()
         if tag == "figure":
@@ -104,6 +116,7 @@ class Audit(HTMLParser):
             self.labels.pop("capture", None)
 
     def handle_data(self, data):
+        if self.capture_brief:self.brief_text.append(data)
         if "capture" in self.labels:
             self.ledger[self.labels["capture"]]["label"] += data
 
@@ -133,13 +146,18 @@ def main():
             and not (args.reader.parent / unquote(u.path)).exists()
         ):
             audit.err.append("找不到合集页面 " + href)
-    if any(p != Counter(en=1, zh=1) for p in audit.pairs.values()):
-        audit.err.append("存在缺失或重复的句对")
     for name in ("sections", "paragraphs"):
         if not audit.counts[name]:
             audit.err.append("缺少 " + name)
     if not audit.pairs:
         audit.err.append("缺少句对")
+    if audit.briefs!=audit.counts["paragraphs"]:
+        audit.err.append("可见段落小结与正文单元数量不一致")
+    mono='data-source-language="zh"' in args.reader.read_text("utf8")
+    if mono and any(v.get('en') or v.get('zh')!=1 for v in audit.pairs.values()):
+        audit.err.append("中文原稿应只包含中文正文句组")
+    elif not mono and any(v!=Counter(en=1,zh=1) for v in audit.pairs.values()):
+        audit.err.append("英文原稿句对未完整对应")
     if "argument" not in audit.ids or "framework" not in audit.ids:
         audit.err.append("缺少技术路线或论证骨架")
     print(

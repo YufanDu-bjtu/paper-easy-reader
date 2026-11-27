@@ -38,6 +38,7 @@
     }else if(toggle)toggle.hidden=true;
   }
   function fitAll(){panels.forEach(fit)}
+  document.addEventListener('readercolumnchange', fitAll);
   document.fonts.ready.then(fitAll);requestAnimationFrame(fitAll);
   let tick=0;addEventListener('resize',()=>{cancelAnimationFrame(tick);tick=requestAnimationFrame(fitAll)});
 })();

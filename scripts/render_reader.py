@@ -31,9 +31,10 @@ CATEGORIES = {
     "method": "采用的方法",
     "concept": "重要概念",
     "limit": "不足与待改进",
+    "data": "支撑数据",
 }
-# Data and caveats in older manifests require editorial review before recoloring.
-LEGACY_ROLES = {"thesis": "claim", "term": "concept", "data": None, "caveat": None}
+# Keep earlier role names usable when regenerating a reader.
+LEGACY_ROLES = {"thesis": "claim", "term": "concept", "caveat": "limit"}
 
 
 def highlight_role(value):
@@ -249,11 +250,15 @@ def paragraph(p, index, original="en", cite_numbers=(), page_numbers=(), render_
         ("英文译文", "中文原文") if original == "zh" else ("英文原文", "中文意译")
     )
     sentences = p["pairs"]
-    if not sentences or not p.get("notes"):
-        raise ValueError("每一正文段需有句对和中文批注")
+    notes=p.get("notes",[])
+    summary=p.get("summary") or next((n["text"] for n in notes if n.get("label") in ("本段小结","段落小结")),None)
+    if not sentences or not isinstance(summary,str) or not summary.strip():
+        raise ValueError(f"第 {index} 段缺少可见中文小结 summary")
+    require_zh=lambda v: bool(re.search(r"[\u3400-\u9fff]",v))
+    if not require_zh(summary):raise ValueError(f"第 {index} 段的小结需使用中文说明")
     en, zh = [], []
     for i, pair in enumerate(sentences, 1):
-        for field, target in (("en", en), ("zh", zh)):
+        for field, target in ((("zh",zh),) if original=="zh" else (("en", en), ("zh", zh))):
             s = rich(pair[field], field == original)
             s = link_citations(s, cite_numbers)
             if not s.strip():
@@ -267,7 +272,8 @@ def paragraph(p, index, original="en", cite_numbers=(), page_numbers=(), render_
                 raise ValueError("段内公式缺少对象清单")
             (en if original == "en" else zh).append(render_equation(key))
     annotations = []
-    for n in p["notes"]:
+    for n in notes:
+        if n.get("label") in ("本段小结","段落小结") and n["text"]==summary:continue
         byline = ""
         if n.get("kind"):
             byline = f'<span class="note-kind">{esc(need(n, "kind"))}</span>'
@@ -281,10 +287,13 @@ def paragraph(p, index, original="en", cite_numbers=(), page_numbers=(), render_
     pages = "".join(f'<a href="#page-{i}">原稿第 {i} 页</a> ' for i in p.get("pages", []) if i in page_numbers)
     evidence = "".join(f'<a href="#obj-{safe_id(r["id"])}">{esc(need(r,"label"))}</a> ' for r in p.get("evidence", []))
     return (
-        f'<article class="row" id="para-{index}"><div class="loc">{pages or esc(need(p, "loc"))}</div>'
-        f'<div class="en" lang="en"><span class="mobile-label">{en_label}</span>{" ".join(en)}</div>'
-        f'<div class="zh"><span class="mobile-label">{zh_label}</span>{"".join(zh)}</div>'
-        f'<aside class="notes tone-{role or "neutral"}">{"".join(annotations)}<div class="evidence">{evidence}</div>{reading}</aside></article>'
+        f'<article class="row" id="para-{index}"><div class="loc">{pages or esc(need(p, "loc"))}'
+        + (f'<button class="note-toggle" type="button" aria-expanded="false" aria-controls="detail-{index}">展开解读</button>' if annotations or evidence or reading else '')+'</div>'
+        + (f'<div class="en" lang="en"><span class="mobile-label">{en_label}</span>{" ".join(en)}</div>' if original!="zh" else '')
+        + f'<div class="zh"><span class="mobile-label">{zh_label}</span>{"".join(zh)}</div>'
+        + f'<aside class="notes"><p class="brief" aria-label="本段小结">{esc(summary)}</p>'
+        + (f'<div hidden id="detail-{index}" class="deep-panel">{"".join(annotations)}<div class="evidence">{evidence}</div>{reading}</div>' if annotations or evidence or reading else '')
+        + '</aside></article>'
     )
 
 
@@ -318,10 +327,11 @@ def header(m, legend, doi_url, nav):
             raise ValueError(f"{key} 需注明版次、统计口径和依据")
         metric_html.append(f"<div><dt>{key}</dt><dd>{value}</dd></div>")
     doi_link = link(doi_url, "DOI ↗") if doi_url else ""
+    heading=(f'<h1>{esc(need(m,"title_zh"))}</h1>' if m.get("original_language")=="zh" else f'<h1 lang="en">{esc(need(m,"title_en"))}</h1><p class="title-zh">{esc(need(m,"title_zh"))}</p>')
     return (
         f'<header><div class="mast-line"><span>{nav or "论文精读"}</span><a href="#framework">技术路线图 ↓</a></div>'
-        f'<h1 lang="en">{esc(need(m, "title_en"))}</h1><p class="title-zh">{esc(need(m, "title_zh"))}</p>'
-        f'<p class="authors">{" · ".join(names)}</p><p class="affiliations">{institution}</p>'
+        +heading
+        + f'<p class="authors">{" · ".join(names)}</p><p class="affiliations">{institution}</p>'
         f'<p class="pubdate">{esc(need(m, "date"))}　{doi_link}</p>'
         f'<dl class="metrics"><div><dt>期刊</dt><dd>{esc(need(m,"journal"))}</dd></div>{"".join(metric_html)}</dl>'
         f'<div class="legend">{legend}</div></header>'
@@ -376,8 +386,11 @@ def bibliography_entries(section, original):
 
 
 def render(data, base):
+    from reading_units import validate_units
+    validate_units(data)
     source = data["source"]
     original = data["meta"].get("original_language", "en")
+    mono=original=='zh'
     if original not in ("en", "zh"):
         raise ValueError("本读本支持英中双语，请明确原文语言")
     en_label, zh_label = (
@@ -461,11 +474,11 @@ def render(data, base):
             else ""
         )
         toc.append(
-            f'<a class="toc-link" style="--level:{level}" href="#sec-{key}">{number}{zh}<span lang="en">{en}</span></a>'
+            f'<a class="toc-link" style="--level:{level}" href="#sec-{key}">{number}{zh}{"" if mono else "<span lang=en>"+en+"</span>"}</a>'
         )
         tag = "h" + str(min(level + 1, 6))
         blocks = [
-            f'<{tag} class="sec-title">{number}{zh}<span lang="en">{en}</span></{tag}>'
+            f'<{tag} class="sec-title">{number}{zh}{"" if mono else "<span lang=en>"+en+"</span>"}</{tag}>'
         ]
         if key in bib:
             items = []
@@ -542,6 +555,12 @@ def render(data, base):
     if not chain:
         raise ValueError("缺少论证链")
     argument = f'<section id="argument"><h2>{argument_heading}</h2><ol>{chain}</ol><div class="syn"><h3>{claim_heading}</h3><p>{claim}</p></div><div class="compare"><div><h3>论证最强处</h3><p>{rich(conclusion["strong"])}</p></div><div><h3>论证最弱处</h3><p>{rich(conclusion["weak"])}</p></div></div></section>'
+    if data.get("related"):
+        links=[]
+        for peer in data['related']:
+            links.append('<li>'+link(peer['href'],need(peer,'title'),True)+'<p>'+rich(peer['comparison'])+'</p></li>')
+        sections.append('<section id="related"><h2>相似研究</h2><ul>'+''.join(links)+'</ul></section>')
+        toc.append('<a href="#related">相似研究</a>')
     roles = {highlight_role(token.get("role")) for sec in data["sections"] if sec["id"] not in bib
              for block in sec.get("blocks", []) for pair in block.get("pairs", [])
              if isinstance(pair[original], list) for token in pair[original] if isinstance(token, dict)}
@@ -557,9 +576,11 @@ def render(data, base):
         if data.get("home") or data.get("issue")
         else ""
     )
-    return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(data["meta"]["title_zh"])}</title><style>{style}</style></head><body>
+    pair_hint = '<p class="pair-hint">悬停或点选中英文句子可查看对应译文。键盘可用 Tab 聚焦。</p>' if original == "en" else ""
+    extra=(ASSETS / "reading-units.html").read_text("utf8")
+    return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(data["meta"]["title_zh"])}</title><style>{style}</style>{extra}</head><body id="top" class="{'mono' if original=='zh' else 'bilingual'}" data-source-language="{original}">
 <div class="mobile-bar"><button id="menu" aria-expanded="false" aria-controls="toc">章节目录</button>{nav}</div><div class="layout"><aside id="toc"><div class="toc-nav">{nav}</div><h2>论文章节目录</h2><nav>{"".join(toc)}</nav></aside>
-<div class="paper-view">{header(data["meta"],legend,doi_url,nav)}<main>{version_box}{framework}<p class="pair-hint">悬停或点选中英文句子可查看对应译文；键盘可用 Tab 聚焦。</p><div class="column-head"><span>{en_label}</span><span>{zh_label}</span><span>概念与研读笔记</span></div>{"".join(sections)}{originals}{study}{lineage}{argument}<footer>{nav}　<a href="#top" id="back-top">返回页首</a></footer></main></div></div>
+<div class="paper-view">{header(data["meta"],legend,doi_url,nav)}<main>{version_box}{framework}{pair_hint}<div class="column-head">{'' if original=='zh' else '<span>'+en_label+'</span>'}<span>{zh_label}</span><span>本段小结与解读</span></div>{"".join(sections)}{originals}{study}{lineage}{argument}<footer>{nav}　<a href="#top" id="back-top">返回页首</a></footer></main></div></div>
 <dialog id="zoom" aria-labelledby="zoom-title"><div class="dialog-bar"><b id="zoom-title">原图</b><button id="size">原始尺寸</button><button id="close">关闭</button></div><div class="zoom-pan" tabindex="0"><img alt=""></div></dialog><script>{script}</script></body></html>""".replace(
         "<body>", '<body id="top">', 1
     )
